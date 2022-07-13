@@ -1,0 +1,76 @@
+import requests
+from bs4 import BeautifulSoup
+import httplib2
+import apiclient
+from oauth2client.service_account import ServiceAccountCredentials
+
+numbers = []
+titles = []
+genres = []
+years = []
+countries = []
+ratings = []
+dict_titles = {}
+for page in range(10):
+    if page != 0:
+        website_url = requests.get('https://www.kinoafisha.info/rating/movies/?page=%s' % page).text
+        soup = BeautifulSoup(website_url, 'lxml')
+    else:
+        website_url = requests.get('https://www.kinoafisha.info/rating/movies/').text
+        soup = BeautifulSoup(website_url, 'lxml')
+    My_table = soup.find_all('div', {'class': 'ratings coating-adaptive-main'})
+    movies = My_table[0].find_all('div', {'class': 'movieList_item movieItem movieItem-rating movieItem-position'})
+    for movie in movies:
+        numbers.append(int(movie.find_all('span', {'class': 'movieItem_position'})[0].get_text().strip()))
+        title = movie.find_all('a', {'class': 'movieItem_title'})[0].get_text().strip()
+        if title in dict_titles:
+            titles.append(f"{title} ({movie.find_all('span', {'class': 'movieItem_year'})[0].get_text().strip().split()[0][:-1]})")
+        else:
+            titles.append(title)
+            dict_titles[title] = None
+        genres.append(movie.find_all('span', {'class': 'movieItem_genres'})[0].get_text().strip())
+        years.append(movie.find_all('span', {'class': 'movieItem_year'})[0].get_text().strip().split()[0][:-1])
+        cont = movie.find_all('span', {'class': 'movieItem_year'})[0].get_text().strip()
+        countries.append(cont[cont.find(' ')+1:])
+        ratings.append(movie.find_all('span', {'class': 'rating_num'})[0].get_text().strip().replace('.', ','))
+
+CREDENTIALS_FILE = r'C:\Users\Dell\OneDrive\Рабочий стол\first-project-355607-c966e7f3acdc.json'
+
+credentials = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
+httpAuth = credentials.authorize(httplib2.Http())
+service = apiclient.discovery.build('sheets', 'v4', http=httpAuth)
+
+spreadsheetId = '1foEOIC6srjPItkkNPPa02nt9-wUsddA0hyg4JnC1aVA'
+'''
+spreadsheet = service.spreadsheets().create(body = {
+    'properties': {'title': 'Топ 1000 лучших фильмов', 'locale': 'ru_RU'},
+    'sheets': [{'properties': {'sheetType': 'GRID',
+                               'sheetId': 0,
+                               'title': 'Лист с фильмами',
+                               'gridProperties': {'rowCount': 1100, 'columnCount': 10}}}]
+}).execute()
+'''
+print('https://docs.google.com/spreadsheets/d/' + spreadsheetId)
+driveService = apiclient.discovery.build('drive', 'v3', http=httpAuth)
+access = driveService.permissions().create(
+    fileId=spreadsheetId,
+    body={'type': 'user', 'role': 'writer', 'emailAddress': 'e.r.ivanov@inbox.ru'},
+    fields='id'
+).execute()
+
+results = service.spreadsheets().values().batchUpdate(spreadsheetId=spreadsheetId, body={
+    "valueInputOption": "USER_ENTERED",
+    "data": [
+        {"range": "Лист с фильмами!A1:G1",
+         "majorDimension": "ROWS",
+         "values": [
+                    ["Номер в списке", "Название фильма", "Жанр фильма", "Год создания", "Страна", "Рейтинг"]
+                   ]},
+
+        {"range": "Лист с фильмами!A2:G1010",
+         "majorDimension": "COLUMNS",
+         "values": [
+                    numbers, titles, genres, years, countries, ratings
+                   ]}
+    ]
+}).execute()
